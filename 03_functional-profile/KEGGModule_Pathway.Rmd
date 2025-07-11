@@ -1,0 +1,100 @@
+---
+title: "KEGG Module and Pathways"
+author: "Juliana A"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Load necessary libraries
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(readr)
+```
+
+
+## Preparing the data
+
+```{r}
+# Define the base working directory
+base_dir <- "/Users/jasge/Documents/01_Gene_Catalog/R_analysis/Share_Results_AllGenes/New/TESTE2"
+
+# Input Files
+kegg_modules_file <- file.path(base_dir, "01_Functions_AllGenes.tsv")
+counts_file <- file.path(base_dir, "02_Counts_AllGenes_PerSample.tsv")
+relative_abundance_file <- file.path(base_dir, "03_RelativeAbundance_AllGenes_PerSample.tsv")
+
+# Step 1: Read the KEGG modules file
+kegg_modules <- read_tsv(kegg_modules_file, col_names = FALSE, show_col_types = FALSE) %>%
+  select(X1, X4) %>%
+  filter(X4 != "-") %>%
+  separate_rows(X4, sep = ",")
+
+# Step 2: Read the counts file and filter rows based on the extracted IDs
+Total_Abundance <- read_tsv(counts_file, col_names = FALSE, show_col_types = FALSE) %>%
+  filter(X1 %in% kegg_modules$X1)
+
+# Step 3: Read the relative abundance file and filter rows based on the extracted IDs
+Relative_Abundance <- read_tsv(relative_abundance_file, col_names = FALSE, show_col_types = FALSE) %>%
+  filter(X1 %in% kegg_modules$X1)
+
+# Define the new column names for the relative abundance file
+new_colnames <- c("gene", paste0("M", sprintf("%02d", 1:30)))
+
+# Assign the new column names to the relative abundance data
+colnames(Relative_Abundance) <- new_colnames
+
+# Step 4: Clean the KEGG modules data
+kegg_modules <- kegg_modules %>%
+  rename(gene = X1, KEGG_Module = X4) %>%
+  filter(gene != "rname")
+
+# Check the result
+head(kegg_modules)
+```
+
+## Merging KEGG and Counts data
+
+```{r}
+# Reshape KEGG data to a long format (not necessary, need to improve it)
+kegg_long <- kegg_modules %>%
+  pivot_longer(cols = starts_with("KEGG_Module"), 
+               names_to = "Module_Type", 
+               values_to = "KEGG_Module") %>%
+  filter(KEGG_Module != "")  # Remove empty rows
+
+# Reshape Counts data to a long format for M01 to M30
+counts_long <- Relative_Abundance %>%
+  pivot_longer(cols = starts_with("M"),
+               names_to = "Sample", 
+               values_to = "Abundance")
+
+# Join the KEGG and Counts data
+merged_data <- kegg_long %>%
+  left_join(counts_long, 
+            by = "gene", 
+            relationship = "many-to-many")
+
+# Group by KEGG_Module and Sample, then sum the abundances
+result <- merged_data %>%
+  mutate(Abundance = as.numeric(Abundance)) %>%  # Convert Abundance to numeric
+  group_by(KEGG_Module, Sample) %>%
+  summarize(Count = sum(Abundance, na.rm = TRUE), 
+            .groups = "drop")
+
+# Pivot the result to wide format with KEGG_Module as rows and Samples as columns
+final_output <- result %>%
+  pivot_wider(names_from = Sample, 
+              values_from = Count, 
+              values_fill = list(Count = 0))
+
+# Print the final output
+print(final_output)
+
+# Optionally write to a file
+output_file <- file.path(base_dir, "KEGG_CountsRelativeAbundance_Output.txt")
+write.table(final_output, output_file, sep = "\t", row.names = FALSE, quote = FALSE)
+```
+

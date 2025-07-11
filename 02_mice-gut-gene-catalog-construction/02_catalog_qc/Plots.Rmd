@@ -1,0 +1,1005 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+# Load necessary library
+library(ggplot2)
+
+# Read the summary file
+summary_data <- read.table("zero_count_summary.txt", header = TRUE, sep = "\t")
+
+# Convert Filename to a factor to maintain order in the plot
+summary_data$Filename <- factor(summary_data$Filename, levels = summary_data$Filename)
+
+# Melt data to long format for plotting zero and non-zero percentages side by side
+library(reshape2)
+plot_data <- melt(summary_data, id.vars = "Filename", measure.vars = c("Percentage_Zero", "Percentage_Non_Zero"))
+
+# Create the plot
+ggplot(plot_data, aes(x = Filename, y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Percentage of Zero and Non-Zero Rows per File",
+       x = "Filename",
+       y = "Percentage",
+       fill = "Row Type") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_manual(values = c("Percentage_Zero" = "red", "Percentage_Non_Zero" = "blue"))
+
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+
+# Shorten the filenames to "M01" through "M30"
+summary_data$Short_Filename <- sub("coverage_", "", summary_data$Filename)
+summary_data$Short_Filename <- sub(".txt", "", summary_data$Short_Filename)
+
+# Convert Short_Filename to a factor to maintain order in the plot
+summary_data$Short_Filename <- factor(summary_data$Short_Filename, levels = summary_data$Short_Filename)
+
+# Reshape data for plotting total lines before and after filtering
+library(reshape2)
+plot_data <- melt(summary_data, id.vars = "Short_Filename", 
+                  measure.vars = c("Total_Lines_Before", "Total_Lines_After"),
+                  variable.name = "Line_Type", value.name = "Count")
+
+# Create the plot
+ggplot(plot_data, aes(x = Short_Filename, y = Count, fill = Line_Type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Total Lines Before and After Filtering per File",
+       x = "Filename",
+       y = "Total Lines",
+       fill = "Line Type") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_manual(values = c("Total_Lines_Before" = "purple", "Total_Lines_After" = "orange"))
+
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Read the summary file
+
+# Shorten the filenames to "M01" through "M30"
+summary_data$Short_Filename <- sub("coverage_", "", summary_data$Filename)
+summary_data$Short_Filename <- sub(".txt", "", summary_data$Short_Filename)
+
+# Calculate the overall Read Counts (total lines) for reference
+read_counts_total <- unique(summary_data$Total_Lines_Before)
+
+# Create a new data frame for plotting, with one row for `Read Counts` and one row for each file's `Read Counts > 0`
+plot_data <- data.frame(
+  Short_Filename = c("Genes", summary_data$Short_Filename),
+  Count = c(read_counts_total, summary_data$Total_Lines_After),
+  Count_Type = c("Genes", rep("Read Counts > 0", length(summary_data$Short_Filename)))
+)
+
+# Convert Short_Filename to a factor to maintain order in the plot
+plot_data$Short_Filename <- factor(plot_data$Short_Filename, levels = plot_data$Short_Filename)
+
+# Plot the data
+ggplot(plot_data, aes(x = Short_Filename, y = Count, fill = Count_Type)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total Genes and Genes with Counts > 0 per Sample",
+       x = "Sample",
+       y = "Genes > 0 Abundance",
+       fill = "Count Type") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_manual(values = c("Genes" = "darkgreen", "Read Counts > 0" = "skyblue"))
+
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Read the summary file
+
+
+# Shorten the filenames to "M01" through "M30"
+summary_data$Short_Filename <- sub("coverage_", "", summary_data$Filename)
+summary_data$Short_Filename <- sub(".txt", "", summary_data$Short_Filename)
+
+# Create a new data frame for plotting, keeping only the filtered Read Counts > 0
+plot_data <- data.frame(
+  Short_Filename = summary_data$Short_Filename,
+  Count = summary_data$Total_Lines_After,
+  Count_Type = rep("Read Counts > 0", length(summary_data$Short_Filename))
+)
+
+# Convert Short_Filename to a factor to maintain order in the plot
+plot_data$Short_Filename <- factor(plot_data$Short_Filename, levels = plot_data$Short_Filename)
+
+# Plot the data
+ggplot(plot_data, aes(x = Short_Filename, y = Count, fill = Count_Type)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +
+  labs(title = "Total Number of Genes with Abundance > 0",
+       x = "Sample",
+       y = "Gene Count") +
+  theme_pubr(border = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_manual(values = c("Read Counts > 0" = "darkgreen"))
+
+```
+
+
+```{r}
+# Data for samples and their gene counts
+samples <- c("M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10",
+             "M11", "M12", "M13", "M14", "M15", "M16", "M17", "M18", "M19", "M20",
+             "M21", "M22", "M23", "M24", "M25", "M26", "M27", "M28", "M29", "M30")
+gene_counts <- c(1589548, 1386566, 1110755, 1314961, 1072310, 1289028, 1512255, 1357587,
+                 1632634, 1547522, 1056769, 1456847, 732085, 1080577, 1092223, 474311,
+                 1146614, 1104444, 1001368, 976839, 1311866, 1090536, 835827, 954897, 97492,
+                 198668, 168019, 215688, 193603, 187115)
+
+# Create a data frame
+df <- data.frame(Sample = samples, Gene_Count = gene_counts)
+
+# Load ggplot2 package
+library(ggplot2)
+
+# Plot
+ggplot(df, aes(x = Sample, y = Gene_Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "Genes per Sample", x = "Samples", y = "Genes Count") +
+  theme_pubr(border = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+## Reads maior que 2
+
+```{r}
+# Load the sample data
+sample_data <- read.table("sample.tsv", header = TRUE, sep = "\t")
+
+# View the first few rows to check the structure of the data
+head(sample_data)
+
+sample_data_long <- pivot_longer(sample_data, cols = c("D1", "D2"), names_to = "Dataset", values_to = "Gene_Count")
+
+# Plot
+ggplot(sample_data_long, aes(x = Sample, y = Gene_Count, fill = Dataset)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("D1" = "#1f77b4", "D2" = "#2ca02c")) +  # Red for D1, Green for D2
+  labs(title = "Gene Counts per Sample: Depth >=1 (D1) and Depth >=2 (D2)", 
+       x = "Sample", y = "Gene Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_pubr(border = FALSE)
+
+ggplot(sample_data, aes(x = Sample)) + 
+  geom_bar(aes(y = D1, fill = "D1"), stat = "identity", position = "dodge") +
+  geom_bar(aes(y = D2, fill = "D2"), stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("D1" = "#1f77b4", "D2" = "#d62728")) + 
+  labs(title = "Gene Counts per Sample: D1 and D2", x = "Sample", y = "Gene Count") +
+  theme_pubr(border = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+# REads 2
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+
+# Directory containing your files
+input_dir <- "01_Merged_FunctionalCatalog_Normalized"
+output_dir <- "Filtered_FunctionalCatalog2"
+
+# Ensure the output directory exists
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir)
+}
+
+# Process files M01 to M30
+for (i in 1:30) {
+  # Construct file names
+  file_id <- sprintf("M%02d", i)
+  input_file <- file.path(input_dir, paste0("Stats_Functional_", file_id, ".tsv"))
+  output_file <- file.path(output_dir, paste0("Stats_Functional_Filtered_", file_id, ".tsv"))
+  
+  # Read the data
+  data <- read.table(input_file, header = TRUE, sep = "\t", quote = "")
+  
+  # Filter rows where numreads >= 3
+  filtered_data <- data %>%
+    filter(numreads >= 2)
+  
+  # Save filtered data
+  write.table(filtered_data, output_file, sep = "\t", row.names = FALSE, quote = FALSE)
+  
+  # Prepare for plotting
+  if (i == 1) {  # Plot for the first file as an example
+    plot_data <- pivot_longer(filtered_data, cols = "numreads", names_to = "Metric", values_to = "Value")
+    
+    # Plot
+    ggplot(plot_data, aes(x = rname, y = Value, fill = Metric)) +
+      geom_bar(stat = "identity") +
+      labs(title = paste("Gene Counts per rname: Filtered by numreads >= 3 (", file_id, ")", sep = ""), 
+           x = "rname", y = "numreads") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      theme_pubr(border = FALSE)
+  }
+}
+
+# Print a message
+cat("Files processed and saved to:", output_dir)
+
+```
+
+
+
+
+# Relative Abundance Merging, test data
+
+
+
+
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+
+# Define the file paths for your test files
+file_paths <- c(
+  "File_1.tsv",
+  "File_2.tsv"
+)
+
+# Function to read each file and select the necessary columns
+read_and_process_file <- function(file, sample_name) {
+  # Attempt to read the file with fill = TRUE and quote = "" to avoid issues with quotes
+  df <- tryCatch({
+    read.table(file, header = TRUE, sep = "\t", check.names = FALSE, fill = TRUE, quote = "")
+  }, error = function(e) {
+    cat("Error reading file:", file, "\n", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (!is.null(df)) {
+    # Check if the number of columns matches the expected number (28 columns)
+    expected_cols <- 28
+    if (ncol(df) != expected_cols) {
+      cat("Warning: File", file, "has", ncol(df), "columns, expected", expected_cols, "columns.\n")
+      return(NULL)
+    }
+    # Select relevant columns: gene_id (rname), length, and numreads
+    df <- df %>% select(gene_id = rname, length, numreads)
+    # Add a column indicating the sample name (M01, M02, etc.)
+    df$sample <- sample_name
+  }
+  return(df)
+}
+
+# Read all files into a list of data frames
+file_list <- list(
+  read_and_process_file(file_paths[1], "M01"),
+  read_and_process_file(file_paths[2], "M02")
+)
+
+# Remove any NULL entries (failed files)
+file_list <- file_list[!sapply(file_list, is.null)]
+
+# If no files were successfully read, print a message and exit
+if (length(file_list) == 0) {
+  stop("No files were successfully read. Check the file paths and format.")
+}
+
+# Merge the data frames by gene_id (gene names)
+merged_df <- Reduce(function(x, y) {
+  full_join(x, y, by = "gene_id", suffix = c("", ".y"))
+}, file_list)
+
+# Now, let's keep the original length and merge numreads for each sample (M01, M02)
+merged_df <- merged_df %>%
+  mutate(
+    # For length, use the coalesce function to take length from either sample if one is missing
+    length = coalesce(length, length.y),
+    # For numreads, use the corresponding numreads for each sample (M01, M02)
+    M01 = numreads,
+    M02 = numreads.y
+  ) %>%
+  select(gene_id, length, M01, M02)  # Keep gene_id, length, and numreads for M01, M02
+
+# Sort by gene_id
+merged_df <- merged_df %>%
+  arrange(gene_id)
+
+# Write the merged and processed data to a file
+output_file <- "merged_data_test.tsv"
+write.table(merged_df, file = output_file, sep = "\t", row.names = FALSE, quote = FALSE)
+
+# Print a confirmation message
+cat("Merged and processed data written to:", output_file, "\n")
+
+```
+
+
+
+# Full file merging
+
+```{r}
+# Load necessary libraries
+library(data.table)
+
+# Define file paths
+file_paths <- list.files(
+  path = "Filtered_FunctionalCatalog2",
+  pattern = "^Stats_Functional_Filtered_M\\d{2}\\.tsv$",
+  full.names = TRUE
+)
+
+# Initialize an empty list to store data
+results <- list()
+
+# Process files one by one
+for (i in seq_along(file_paths)) {
+  # Read the file using data.table
+  message("Processing file: ", file_paths[i])
+  dt <- fread(file_paths[i], select = c("rname", "length", "numreads"), sep = "\t")
+  
+  # Rename columns for consistency
+  setnames(dt, old = c("rname", "numreads"), new = c("gene_id", paste0("M", sprintf("%02d", i))))
+  
+  # Add to results list
+  results[[i]] <- dt
+}
+
+# Merge all files
+message("Merging all files...")
+merged_dt <- Reduce(function(x, y) {
+  merge(x, y, by = c("gene_id", "length"), all = TRUE)
+}, results)
+
+# Write the final merged data
+output_file <- "Merged_Stats_Functional_Filtered.tsv"
+fwrite(merged_dt, file = output_file, sep = "\t", quote = FALSE)
+
+# Confirmation message
+message("Merged data written to: ", output_file)
+
+
+```
+
+
+
+# Relative Abundance
+
+```{r}
+# Load necessary libraries
+library(data.table)
+
+# Input and output file paths
+input_file <- "Merged_Stats_Functional_Filtered.tsv"
+output_file_relative_abundance <- "Relative_Abundance.tsv"
+output_file_tpm <- "/TPM.tsv"
+
+# Read the input data
+data <- fread(input_file)
+
+# Replace NA in the dataset with 0
+data[is.na(data)] <- 0
+
+# Extract numeric columns (gene lengths and counts)
+gene_lengths <- as.numeric(data$length) # Ensure 'length' is numeric
+count_data <- data[, -c("gene_id", "length"), with = FALSE] # Exclude non-count columns
+
+# Convert count_data to a numeric matrix
+count_data <- as.matrix(sapply(count_data, as.numeric))
+
+# Validate gene lengths
+gene_lengths[is.na(gene_lengths) | gene_lengths == 0] <- 1 # Avoid division by zero
+
+# Normalize counts by gene length
+normalized_counts <- sweep(count_data, 1, gene_lengths, `/`)
+
+# Replace any resulting NA in normalized_counts with 0
+normalized_counts[is.na(normalized_counts)] <- 0
+
+# Calculate relative abundance
+relative_abundance <- sweep(normalized_counts, 2, colSums(normalized_counts, na.rm = TRUE), `/`)
+
+# Replace NA in relative_abundance with 0
+relative_abundance[is.na(relative_abundance)] <- 0
+
+# Calculate TPM
+tpm <- relative_abundance * 1e6
+
+# Replace NA in TPM with 0
+tpm[is.na(tpm)] <- 0
+
+# Add gene_id back to the output data
+relative_abundance_df <- as.data.table(relative_abundance)
+relative_abundance_df[, gene_id := data$gene_id]
+setcolorder(relative_abundance_df, c("gene_id", colnames(relative_abundance_df)[-ncol(relative_abundance_df)]))
+
+tpm_df <- as.data.table(tpm)
+tpm_df[, gene_id := data$gene_id]
+setcolorder(tpm_df, c("gene_id", colnames(tpm_df)[-ncol(tpm_df)]))
+
+# Save results to files
+fwrite(relative_abundance_df, output_file_relative_abundance, sep = "\t")
+fwrite(tpm_df, output_file_tpm, sep = "\t")
+
+# Print confirmation
+cat("Relative abundance and TPM calculation completed. Results saved to:\n",
+    output_file_relative_abundance, "\n", output_file_tpm, "\n")
+
+```
+
+
+
+
+
+
+
+
+# second Test
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+
+# Directory containing your files
+input_dir <- "01_Merged_FunctionalCatalog_Normalized"
+output_dir <- "Filtered_FunctionalCatalog"
+
+# Ensure the output directory exists
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir)
+}
+
+# Process files M01 to M30
+for (i in 1:30) {
+  # Construct file names
+  file_id <- sprintf("M%02d", i)
+  input_file <- file.path(input_dir, paste0("Stats_Functional_", file_id, ".tsv"))
+  output_file <- file.path(output_dir, paste0("Stats_Functional_Filtered_", file_id, ".tsv"))
+  
+  # Read the data
+  data <- read.table(input_file, header = TRUE, sep = "\t", quote = "")
+  
+  # Ensure `numreads` is numeric
+  data$numreads <- as.numeric(data$numreads)
+  
+  # Filter rows where numreads >= 3
+  filtered_data <- data %>%
+    filter(numreads >= 3)
+  
+  # Save filtered data
+  write.table(filtered_data, output_file, sep = "\t", row.names = FALSE, quote = FALSE)
+  
+  # Prepare for plotting
+  if (i == 1) {  # Plot for the first file as an example
+    plot_data <- filtered_data %>%
+      group_by(rname) %>%  # Group by sample (rname)
+      summarize(total_numreads = sum(numreads, na.rm = TRUE))  # Aggregate numreads per sample
+    
+    # Plot
+    ggplot(plot_data, aes(x = rname, y = total_numreads)) +
+      geom_bar(stat = "identity", fill = "#1f77b4") +  # Single color for bars
+      labs(title = paste("Gene Counts per Sample (Filtered by numreads >= 3):", file_id), 
+           x = "Sample (rname)", y = "Total numreads") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      theme_pubr(border = FALSE)
+  }
+}
+
+# Print a message
+cat("Files processed and saved to:", output_dir)
+
+```
+
+
+
+
+
+
+# Metadata From Albert
+
+```{r}
+library(readxl)
+meta_filename <- "R_analysis/Metadata.xlsx"
+#meta_full <- read_excel(path = meta_filename, col_names = T, n_max = 15)
+meta_full <- read_excel(path = meta_filename, col_names = T, n_max = 30)
+meta_full$`Group No` <- factor(meta_full$`Group No`, levels = c("1", "2", "3"),                                labels = c("Chow", "CDAA-HF", "CDAA-HF+Abx"))
+meta_full$Group <- paste(meta_full$`Group No`, "_",                          meta_full$`Week of euthanasia`, "w", sep = '')
+meta_full$Group <- factor(meta_full$Group, levels = c("Chow_6w", "Chow_12w",                                                       "CDAA-HF_6w", "CDAA-HF_12w", "CDAA-HF+Abx_12w"))
+meta_full$`Antibiotic treatment` <- factor(meta_full$`Antibiotic treatment`,                                            levels = c("No", "Yes"))
+meta_full$Week <- factor(meta_full$`Week of euthanasia`, levels = c("6", "12"),                          labels = c("6w", "12w"))
+meta_full$`Mouse ID` <- factor(meta_full$`Mouse ID`)
+#meta_full <- meta_full[-5,] # that was for M11
+meta_full$shotgun_file <- meta_full$`Sample Name`
+```
+
+
+```{r}
+# Sample gene counts data (as before)
+samples <- c("M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10",
+             "M11", "M12", "M13", "M14", "M15", "M16", "M17", "M18", "M19", "M20",
+             "M21", "M22", "M23", "M24", "M25", "M26", "M27", "M28", "M29", "M30")
+gene_counts <- c(1589548, 1386566, 1110755, 1314961, 1072310, 1289028, 1512255, 1357587,
+                 1632634, 1547522, 1056769, 1456847, 732085, 1080577, 1092223, 474311,
+                 1146614, 1104444, 1001368, 976839, 1311866, 1090536, 835827, 954897, 97492,
+                 198668, 168019, 215688, 193603, 187115)
+
+# Create data frame for gene counts
+gene_df <- data.frame(Sample = samples, Gene_Count = gene_counts)
+
+# Create meta data (sample information)
+meta_df <- data.frame(
+  Sample = c("M04", "M05", "M06", "M10", "M11", "M12", "M16", "M17", "M18", "M22",
+             "M23", "M24", "M01", "M02", "M03", "M07", "M08", "M09", "M13", "M14",
+             "M15", "M19", "M20", "M21", "M25", "M26", "M27", "M28", "M29", "M30"),
+  Group = c("Chow_6w", "Chow_6w", "Chow_6w", "Chow_6w", "Chow_6w", "Chow_6w", 
+            "CDAA-HF_6w", "CDAA-HF_6w", "CDAA-HF_6w", "CDAA-HF_6w", "CDAA-HF_6w", 
+            "CDAA-HF_6w", "Chow_12w", "Chow_12w", "Chow_12w", "Chow_12w", "Chow_12w", 
+            "Chow_12w", "Chow_12w", "CDAA-HF_12w", "CDAA-HF_12w", "CDAA-HF_12w", 
+            "CDAA-HF_12w", "CDAA-HF_12w", "CDAA-HF+Abx_12w", "CDAA-HF+Abx_12w", 
+            "CDAA-HF+Abx_12w", "CDAA-HF+Abx_12w", "CDAA-HF+Abx_12w", "CDAA-HF+Abx_12w")
+)
+
+# Merge gene counts with meta data based on Sample
+merged_df <- merge(gene_df, meta_df, by = "Sample")
+
+# Aggregate gene counts by Group
+group_gene_counts <- aggregate(Gene_Count ~ Group, data = merged_df, sum)
+
+# Load ggplot2 package
+library(ggplot2)
+
+# Plot the number of genes per Group
+ggplot(group_gene_counts, aes(x = Group, y = Gene_Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  theme_pubr(border = FALSE) +
+  labs(title = "Genes per Group", x = "Group", y = "Total Gene Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+```{r}
+# Load necessary library
+library(ggplot2)
+
+# Read the data
+depth_data <- read.table("Depth_M01.tsv", header = TRUE, sep = "\t")
+
+depth_data$numreads <- as.numeric(depth_data$numreads)
+
+# Calculate the mean, min, and max for `numreads`
+mean_numreads <- mean(depth_data$numreads, na.rm = TRUE)
+min_numreads <- min(depth_data$numreads, na.rm = TRUE)
+max_numreads <- max(depth_data$numreads, na.rm = TRUE)
+
+# Print the calculated values
+cat("Mean of numreads:", mean_numreads, "\n")
+cat("Minimum numreads:", min_numreads, "\n")
+cat("Maximum numreads:", max_numreads, "\n")
+
+```
+
+
+
+```{r}
+# Load the data
+depth_data <- read.table("Depth_M01.tsv", header = TRUE, sep = "\t")
+
+# Ensure `numreads` is numeric
+depth_data$numreads <- as.numeric(depth_data$numreads)
+
+# Calculate the mean, min, and max for `numreads`
+mean_numreads <- mean(depth_data$numreads, na.rm = TRUE)
+max_numreads <- max(depth_data$numreads, na.rm = TRUE)
+
+# Calculate frequencies based on specified conditions
+count_min_coverage <- sum(depth_data$numreads == 1, na.rm = TRUE)
+count_equal_mean <- sum(depth_data$numreads == mean_numreads, na.rm = TRUE)
+count_below_mean <- sum(depth_data$numreads < mean_numreads, na.rm = TRUE)
+count_above_mean <- sum(depth_data$numreads > mean_numreads, na.rm = TRUE)
+count_max_coverage <- sum(depth_data$numreads == max_numreads, na.rm = TRUE)
+
+# Create a formatted summary DataFrame with specified order and values in the label
+summary_df <- data.frame(
+  Value = factor(c(
+    paste("Min Coverage (", 1, ")", sep = ""),
+    paste("Equal the Mean (", round(mean_numreads, 2), ")", sep = ""),
+    paste("Below the Mean (", round(mean_numreads, 2), ")", sep = ""),
+    paste("Above the Mean (", round(mean_numreads, 2), ")", sep = ""),
+    paste("Max Coverage (", max_numreads, ")", sep = "")
+  ),
+  levels = c(
+    paste("Min Coverage (", 1, ")", sep = ""),
+    paste("Equal the Mean (", round(mean_numreads, 2), ")", sep = ""),
+    paste("Below the Mean (", round(mean_numreads, 2), ")", sep = ""),
+    paste("Above the Mean (", round(mean_numreads, 2), ")", sep = ""),
+    paste("Max Coverage (", max_numreads, ")", sep = "")
+  )),
+  Coverage = c(1, round(mean_numreads, 2), round(mean_numreads, 2), round(mean_numreads, 2), max_numreads),
+  Count = c(count_min_coverage, count_equal_mean, count_below_mean, count_above_mean, count_max_coverage)
+)
+
+# Print the summary DataFrame
+print(summary_df)
+
+# Plot the frequency distribution with custom colors and adjusted order
+library(ggplot2)
+ggplot(summary_df, aes(x = Value, y = Count, fill = Value)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_fill_manual(values = c("#FFA07A", "#FF6347", "#87CEFA", "#4682B4", "#4B0082")) + # Custom color palette
+  labs(title = "Frequency Distribution of Numreads Conditions",
+       x = "Depth",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+```
+
+
+
+# Loop all
+
+```{r}
+# Load necessary library
+library(ggplot2)
+
+# Set the path where your Depth_M01.tsv to Depth_M30.tsv files are located
+file_path <- "Depth_Column/"
+
+# Initialize an empty DataFrame to store all the results
+summary_df_all <- data.frame()
+
+# Define a fixed color palette for the categories
+fixed_colors <- c(
+  "Min Coverage (1)" = "#FFA07A",  # Light Salmon
+  "Below the Mean (23.94)" = "#87CEFA",  # Light Sky Blue
+  "Above the Mean (23.94)" = "#4682B4",  # Steel Blue
+  "Max Coverage (22133)" = "#4B0082"   # Indigo
+)
+
+# Loop through each file from Depth_M01.tsv to Depth_M30.tsv
+for (i in 1:30) {
+  
+  # Create the filename dynamically, including the path
+  file_name <- paste0(file_path, "Depth_M", sprintf("%02d", i), ".tsv")
+  
+  # Check if the file exists before attempting to read it
+  if (file.exists(file_name)) {
+    
+    # Read the current file
+    depth_data <- read.table(file_name, header = TRUE, sep = "\t")
+    
+    # Ensure `numreads` is numeric and handle coercion issues
+    depth_data$numreads <- as.numeric(depth_data$numreads)
+    
+    # Check if there are any NAs introduced during coercion
+    if (any(is.na(depth_data$numreads))) {
+      warning(paste("NAs introduced in", file_name))
+    }
+    
+    # Calculate the mean, min, and max for `numreads`
+    mean_numreads <- mean(depth_data$numreads, na.rm = TRUE)
+    max_numreads <- max(depth_data$numreads, na.rm = TRUE)
+    
+    # Calculate frequencies based on specified conditions
+    count_min_coverage <- sum(depth_data$numreads == 1, na.rm = TRUE)
+    count_below_mean <- sum(depth_data$numreads < mean_numreads, na.rm = TRUE)
+    count_above_mean <- sum(depth_data$numreads > mean_numreads, na.rm = TRUE)
+    count_max_coverage <- sum(depth_data$numreads == max_numreads, na.rm = TRUE)
+    
+    # Create a formatted summary DataFrame for the current file (excluding Equal the Mean)
+    summary_df <- data.frame(
+      Sample = paste0("M", sprintf("%02d", i)),  # Shortened sample name (e.g., M01, M02)
+      Value = factor(c(
+        paste("Min Coverage (", 1, ")", sep = ""),
+        paste("Below the Mean (", round(mean_numreads, 2), ")", sep = ""),
+        paste("Above the Mean (", round(mean_numreads, 2), ")", sep = ""),
+        paste("Max Coverage (", max_numreads, ")", sep = "")
+      ),
+      levels = c(
+        paste("Min Coverage (", 1, ")", sep = ""),
+        paste("Below the Mean (", round(mean_numreads, 2), ")", sep = ""),
+        paste("Above the Mean (", round(mean_numreads, 2), ")", sep = ""),
+        paste("Max Coverage (", max_numreads, ")", sep = "")
+      )),
+      Coverage = c(1, round(mean_numreads, 2), round(mean_numreads, 2), max_numreads),
+      Count = c(count_min_coverage, count_below_mean, count_above_mean, count_max_coverage)
+    )
+    
+    # Append the current summary to the overall summary DataFrame
+    summary_df_all <- rbind(summary_df_all, summary_df)
+  } else {
+    warning(paste("File not found:", file_name))
+  }
+}
+
+# Print the combined summary DataFrame
+print(summary_df_all)
+
+# Plot the results
+ggplot(summary_df_all, aes(x = Value, y = Count, fill = Value)) +
+  geom_bar(stat = "identity", color = "black", position = "dodge") +  # Bar plot with black outlines
+  facet_wrap(~ Sample, scales = "free_y") +  # Separate plots for each sample
+  scale_fill_manual(values = fixed_colors) +  # Use the fixed color palette
+  labs(title = "Frequency Distribution of Numreads Conditions per Sample",
+       x = "Depth",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")  # Remove legend for better readability
+
+
+```
+
+# Trying again removing NAs
+
+```{r}
+# Load necessary library
+library(ggplot2)
+
+# Set the path where your Depth_M01.tsv to Depth_M30.tsv files are located
+file_path <- "Depth_Column/"
+
+# Initialize an empty DataFrame to store all the results
+summary_df_all <- data.frame()
+
+# Loop through each file from Depth_M01.tsv to Depth_M30.tsv
+for (i in 1:30) {
+  
+  # Create the filename dynamically, including the path
+  file_name <- paste0(file_path, "Depth_M", sprintf("%02d", i), ".tsv")
+  
+  # Check if the file exists before attempting to read it
+  if (file.exists(file_name)) {
+    
+    # Read the current file
+    depth_data <- read.table(file_name, header = TRUE, sep = "\t")
+    
+    # Ensure `numreads` is numeric and handle coercion issues
+    depth_data$numreads <- as.numeric(depth_data$numreads)
+    
+    # Remove rows with NA values in numreads
+    depth_data <- depth_data[!is.na(depth_data$numreads), ]
+    
+    # Add a 'Category' column for min_coverage (where numreads == 1)
+    depth_data$Category <- ifelse(depth_data$numreads == 1, "Min Coverage (1)", NA)
+    
+    # Remove rows where Category is NA (we only want min_coverage)
+    depth_data <- depth_data[!is.na(depth_data$Category), ]
+    
+    # Add the sample column (shortened to M01, M02, etc.)
+    depth_data$Sample <- paste0("M", sprintf("%02d", i))
+    
+    # Append the current data to the overall summary DataFrame
+    summary_df_all <- rbind(summary_df_all, depth_data)
+  } else {
+    warning(paste("File not found:", file_name))
+  }
+}
+
+# Check the resulting summary DataFrame
+head(summary_df_all)
+
+```
+
+```{r}
+#Plot
+# Plot for min_coverage (numreads == 1) across all samples
+ggplot(summary_df_all, aes(x = Sample, fill = Category)) +
+  geom_bar(stat = "count", color = "black", position = "dodge") +
+  scale_fill_manual(values = c("Min Coverage (1)" = "#FFA07A")) +  # Light Salmon color for min_coverage
+  labs(title = "Min Coverage Distribution Across Samples (numreads == 1)",
+       x = "Sample",
+       y = "Frequency") +
+  theme_pubr(border = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")  # Remove legend since it's redundant
+
+```
+
+
+```{r}
+#Bellow mean
+
+# Initialize an empty DataFrame to store all the results
+summary_df_all <- data.frame()
+
+# Loop through each file from Depth_M01.tsv to Depth_M30.tsv
+for (i in 1:30) {
+  
+  # Create the filename dynamically, including the path
+  file_name <- paste0(file_path, "Depth_M", sprintf("%02d", i), ".tsv")
+  
+  # Check if the file exists before attempting to read it
+  if (file.exists(file_name)) {
+    
+    # Read the current file
+    depth_data <- read.table(file_name, header = TRUE, sep = "\t")
+    
+    # Ensure `numreads` is numeric and handle coercion issues
+    depth_data$numreads <- as.numeric(depth_data$numreads)
+    
+    # Remove rows with NA values in numreads
+    depth_data <- depth_data[!is.na(depth_data$numreads), ]
+    
+    # Add the sample column (shortened to M01, M02, etc.)
+    depth_data$Sample <- paste0("M", sprintf("%02d", i))
+    
+    # Categorize data
+    depth_data$Category <- NA  # Initialize the Category column
+    depth_data$Category[depth_data$numreads == 1] <- "Min Coverage (1)"
+    depth_data$Category[depth_data$numreads < mean_numreads] <- "Below Mean"
+    depth_data$Category[depth_data$numreads > mean_numreads] <- "Above Mean"
+    depth_data$Category[depth_data$numreads == max_numreads] <- "Max Coverage"
+    
+    # Append the current data to the overall summary DataFrame
+    summary_df_all <- rbind(summary_df_all, depth_data)
+  } else {
+    warning(paste("File not found:", file_name))
+  }
+}
+
+# Check the resulting summary DataFrame
+head(summary_df_all)
+
+
+```
+
+```{r}
+#Plot
+
+# Calculate the mean and max numreads across all samples
+mean_numreads <- mean(summary_df_all$numreads, na.rm = TRUE)
+max_numreads <- max(summary_df_all$numreads, na.rm = TRUE)
+
+# Categorize data into the four categories
+summary_df_all$Category <- NA  # Initialize the Category column
+
+# Assign categories based on numreads
+summary_df_all$Category[summary_df_all$numreads == 1] <- "Min Coverage (1)"
+summary_df_all$Category[summary_df_all$numreads < mean_numreads] <- "Below Mean"
+summary_df_all$Category[summary_df_all$numreads > mean_numreads] <- "Above Mean"
+summary_df_all$Category[summary_df_all$numreads == max_numreads] <- "Max Coverage"
+
+# Check the first few rows to confirm the categories
+head(summary_df_all)
+
+# Filter for 'below_mean' (numreads < mean)
+below_mean_data <- summary_df_all[summary_df_all$Category == "Below Mean", ]
+
+# Check if we have data for below_mean
+table(below_mean_data$Category)
+
+# Plot for below_mean (numreads < mean) across all samples
+ggplot(below_mean_data, aes(x = Sample, fill = Category)) +
+  geom_bar(stat = "count", color = "black", position = "dodge") +
+  scale_fill_manual(values = c("Below Mean" = "#FF6347")) +  # Tomato color for below_mean
+  labs(title = paste("Below Mean Coverage Distribution Across Samples (numreads <", round(mean_numreads, 2), ")"),
+       x = "Sample",
+       y = "Frequency") +
+  theme_pubr(border = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")  # Remove legend since it's redundant
+
+```
+
+
+```{r}
+# Filter for 'above_mean' (numreads > mean) across all samples
+above_mean_data <- summary_df_all[summary_df_all$Category == "Above Mean", ]
+
+# Check the categories in above_mean_data
+table(above_mean_data$Category)
+
+# Plot for above_mean (numreads > mean) across all samples
+ggplot(above_mean_data, aes(x = Sample, fill = Category)) +
+  geom_bar(stat = "count", color = "black", position = "dodge") +
+  scale_fill_manual(values = c("Above Mean" = "#1E90FF")) +  # DodgerBlue color for above_mean
+  labs(title = paste("Above Mean Coverage Distribution Across Samples (numreads >", round(mean_numreads, 2), ")"),
+       x = "Sample",
+       y = "Frequency") +
+  theme_pubr(border = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")  # Remove legend since it's redundant
+
+```
+
+
+# Mean per sample
+
+```{r}
+# Calculate the mean for each sample
+mean_per_sample <- summary_df_all %>%
+  group_by(Sample) %>%
+  summarise(mean_numreads = mean(numreads, na.rm = TRUE))
+
+# Merge the means back into the summary_df_all
+summary_df_all <- left_join(summary_df_all, mean_per_sample, by = "Sample")
+
+# Filter for 'above_mean' (numreads > mean) across all samples
+above_mean_data <- summary_df_all[summary_df_all$Category == "Above Mean", ]
+
+# Count occurrences per sample
+above_mean_counts <- above_mean_data %>%
+  group_by(Sample) %>%
+  summarise(count = n())
+
+# Merge the counts back with the above_mean_data
+above_mean_data <- left_join(above_mean_data, above_mean_counts, by = "Sample")
+
+# Plot for above_mean (numreads > mean) across all samples
+ggplot(above_mean_data, aes(x = Sample, fill = Category)) +
+  geom_bar(stat = "count", color = "black", position = "dodge") +
+  scale_fill_manual(values = c("Above Mean" = "#1E90FF")) +  # DodgerBlue color for above_mean
+  labs(title = "Above Mean Coverage Distribution Across Samples",
+       x = "Sample (Mean Coverage)",
+       y = "Frequency") +
+  geom_text(aes(label = paste("Mean =", round(mean_numreads, 2))), 
+            aes(y = count), color = "black", size = 3, vjust = -0.5) +  # Adjusted for correct label position
+  theme_pubr(border = FALSE) +  # Using theme_pubr(border = FALSE)
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")  # Remove legend since it's redundant
+
+
+
+
+```
+
+
+
+#### KEGG merging KO modules
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+
+# Read KEGG data
+kegg <- read.delim("SmallTest/KEGG", sep = "\t", stringsAsFactors = FALSE)
+colnames(kegg) <- c("gene", "KEGG_Module1", "KEGG_Module2")
+
+# Read Counts data
+counts <- read.delim("/SmallTest/Counts", sep = "\t", stringsAsFactors = FALSE)
+colnames(counts) <- c("gene", "M01")
+
+# Reshape KEGG data to a long format (one module per row)
+kegg_long <- kegg %>%
+  pivot_longer(cols = starts_with("KEGG_Module"), names_to = "Module_Type", values_to = "KEGG_Module") %>%
+  filter(KEGG_Module != "") # Remove empty rows
+
+# Join the KEGG and Counts data
+merged_data <- kegg_long %>%
+  left_join(counts, by = "gene") %>%
+  group_by(KEGG_Module) %>%
+  summarize(Count = sum(M01, na.rm = TRUE))
+
+# Arrange the data for final output
+final_output <- merged_data %>%
+  arrange(KEGG_Module)
+
+# Print the result
+print(final_output)
+
+# Optionally write to a file
+write.table(final_output, "/SmallTest/KEGG_Count_Output.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+```
+
+
+
+

@@ -1,0 +1,1142 @@
+---
+title: "All genes, function and no function"
+author: "Juliana A"
+output: html_notebook
+---
+
+
+# Filter genes >= 2 reads
+
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+
+# Directory containing your files
+input_dir <- "/All_Genes_NoANwithFunction"
+output_dir <- "/Filtered_2reads"
+
+# Ensure the output directory exists
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir)
+}
+
+# Process files M01 to M30
+for (i in 1:30) {
+  # Construct file names
+  file_id <- sprintf("M%02d", i)
+  input_file <- file.path(input_dir, paste0("filtered_coverage_", file_id, "_columns.txt"))
+  output_file <- file.path(output_dir, paste0("filtered_coverage_2reads_", file_id, "_columns.txt"))
+  
+  # Read the data
+  data <- read.table(input_file, header = TRUE, sep = "\t", quote = "", comment.char = "")
+  
+  # Ensure the column names are corrected if necessary
+  colnames(data)[1] <- "rname"  # Rename the first column if it was misread
+  
+  # Filter rows where numreads >= 2
+  filtered_data <- data %>%
+    filter(numreads >= 2)
+  
+  # Save filtered data
+  write.table(filtered_data, output_file, sep = "\t", row.names = FALSE, quote = FALSE)
+```
+
+# Prepare for plotting
+
+```{r}
+  if (i == 1) {  # Plot for the first file as an example
+    plot_data <- pivot_longer(filtered_data, 
+                              cols = "numreads", 
+                              names_to = "Metric", 
+                              values_to = "Value")
+    
+    # Plot
+    ggplot(plot_data, 
+           aes(x = rname, 
+               y = Value, 
+               fill = Metric)) +
+      
+      geom_bar(stat = "identity") +
+      
+      labs(title = paste("Gene Counts per rname: Filtered by numreads >= 2 (", file_id, ")", 
+                         sep = ""), 
+           x = "rname", 
+           y = "numreads") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      theme_pubr(border = FALSE)
+  }
+}
+
+# Print a message
+cat("Files processed and saved to:", output_dir)
+```
+
+
+# Full file merging and filtering Jan 15
+
+```{r}
+# Load necessary libraries
+library(data.table)
+library(tidyverse)
+library(ggpubr)
+
+# Define file paths
+file_paths <- list.files(
+  path = "Filtered_2reads",
+  pattern = "^filtered_coverage_2reads_M\\d{2}_columns\\.txt$",
+  full.names = TRUE
+)
+
+# Initialize an empty list to store data
+results <- list()
+
+# Process files one by one
+for (i in seq_along(file_paths)) {
+  # Read the file using data.table
+  message("Processing file: ", file_paths[i])
+  dt <- fread(file_paths[i], select = c("rname", "length", "numreads"), sep = "\t")
+  
+  # Rename columns for consistency
+  setnames(dt, old = c("rname", "numreads"), new = c("gene_id", paste0("M", sprintf("%02d", i))))
+  
+  # Add to results list
+  results[[i]] <- dt
+}
+
+# Merge all files
+message("Merging all files...")
+merged_dt <- Reduce(function(x, y) {
+  merge(x, y, by = c("gene_id", "length"), all = TRUE)
+}, results)
+
+# Write the final merged data
+output_file <- "Merged_AllGenes_Reads2.tsv"
+fwrite(merged_dt, file = output_file, 
+       sep = "\t", quote = FALSE)
+
+# Confirmation message
+message("Merged data written to: ", output_file)
+```
+
+
+# sum all reads
+
+
+
+```{r}
+# Input and output file paths
+input_file <- "/Merged_AllGenes_Reads2.tsv"
+output_file_relative_abundance <- "/Relative_Abundance.tsv"
+output_file_tpm <- "/TPM.tsv"
+
+# Read the input data
+data <- fread(input_file)
+
+test <- head(data)
+# Replace NA in the dataset with 0
+test[is.na(test)] <- 0
+
+data <- test
+
+
+# Extract gene lengths and sample columns
+gene_lengths <- data$length
+sample_data <- data[, -c("gene_id", "length"), with = FALSE]
+
+# Ensure data is numeric for calculations
+sample_data <- as.matrix(sapply(sample_data, as.numeric))
+
+# Replace invalid gene lengths (e.g., NA or 0) with 1
+gene_lengths[is.na(gene_lengths) | gene_lengths == 0] <- 1
+
+# Calculate total mapped reads (sequencing depth) for each sample
+total_mapped_reads <- colSums(sample_data)
+
+# Normalize reads by (gene length * total mapped reads per sample)
+# For each sample, divide each gene's reads by (gene_length * total_mapped_reads)
+normalized_counts <- sweep(sample_data, 1, gene_lengths, `/`) # Divide by gene lengths
+normalized_counts <- sweep(normalized_counts, 2, total_mapped_reads, `/`) # Scale by total mapped reads
+
+# Replace any resulting NA values with 0
+normalized_counts[is.na(normalized_counts)] <- 0
+
+# Add gene_id back for reference
+output <- cbind(data[, .(gene_id)], as.data.table(normalized_counts))
+
+# Save normalized data to a new file
+fwrite(output, "normalized_counts_adjusted.csv")
+#####
+
+#### Now add the module normalization
+
+
+# Define the base working directory
+base_dir <- "TESTE2"
+
+# Input Files
+kegg_modules_file <- file.path(base_dir, "01_Functions_AllGenes.tsv")
+#relative_abundance_file <- file.path(base_dir, "03_RelativeAbundance_AllGenes_PerSample.tsv")
+relative_abundance_file <- file.path(base_dir, "normalized_counts_adjusted.csv")
+
+# Step 1: Read the KEGG modules file
+kegg_modules <- read_tsv(kegg_modules_file, col_names = FALSE, show_col_types = FALSE) %>%
+  select(X1, X4) %>%
+  filter(X4 != "-") %>%
+  separate_rows(X4, sep = ",")
+
+# Step 2: Read the relative abundance file and filter rows based on the extracted IDs
+Relative_Abundance <- read_tsv(relative_abundance_file, col_names = FALSE, show_col_types = FALSE) %>%
+  filter(X1 %in% kegg_modules$X1)
+
+# Define the new column names for the relative abundance file
+new_colnames <- c("gene", paste0("M", sprintf("%02d", 1:30)))
+colnames(Relative_Abundance) <- new_colnames
+
+# Step 3: Clean the KEGG modules data
+kegg_modules <- kegg_modules %>%
+  rename(gene = X1, KEGG_Module = X4) %>%
+  filter(gene != "rname")
+
+# Step 4: Reshape Counts data to a long format for M01 to M30
+counts_long <- Relative_Abundance %>%
+  pivot_longer(cols = starts_with("M"), names_to = "Sample", values_to = "Abundance")
+
+# Step 5: Join the KEGG modules and Counts data
+merged_data <- kegg_modules %>%
+  left_join(counts_long, by = "gene", relationship = "many-to-many")
+
+# ---- NEW CODE INSERTED HERE ----
+
+# Group by KEGG_Module and Sample, then sum the abundances
+module_totals <- merged_data %>%
+  mutate(Abundance = as.numeric(Abundance)) %>%  # Convert Abundance to numeric
+  group_by(KEGG_Module, Sample) %>%
+  summarize(Module_Abundance = sum(Abundance, na.rm = TRUE), .groups = "drop")
+
+# Calculate total abundance across all modules per sample
+sample_totals <- module_totals %>%
+  group_by(Sample) %>%
+  summarize(Total_Sample_Abundance = sum(Module_Abundance, na.rm = TRUE), .groups = "drop")
+
+# Merge total sample abundance back to module totals
+relative_abundance <- module_totals %>%
+  left_join(sample_totals, by = "Sample") %>%
+  mutate(Relative_Abundance = Module_Abundance / Total_Sample_Abundance) %>%
+  select(KEGG_Module, Sample, Relative_Abundance)
+
+# Pivot the result to wide format with KEGG_Module as rows and Samples as columns
+final_output <- relative_abundance %>%
+  pivot_wider(names_from = Sample, values_from = Relative_Abundance, values_fill = list(Relative_Abundance = 0))
+# ---- END OF NEW CODE ----
+
+# Print the final output
+print(final_output)
+
+# Optionally write to a file
+output_file <- file.path(base_dir, "KEGG_RelativeAbundance_Output.txt")
+write.table(final_output, output_file, sep = "\t", row.names = FALSE, quote = FALSE)
+
+
+#####
+
+
+
+
+
+
+
+
+####
+gene_lengths <- as.numeric(data$length) 
+count_data <- data[, -c("gene_id", "length"), with = FALSE] 
+
+count_data <- as.matrix(sapply(count_data, as.numeric))
+
+gene_lengths[is.na(gene_lengths) | gene_lengths == 0] <- 1 
+
+# Normalize counts by gene length
+normalized_counts <- sweep(count_data, 1, gene_lengths, `/`)
+
+# Replace any resulting NA
+normalized_counts[is.na(normalized_counts)] <- 0
+
+# Calculate total abundance 
+total_abundance <- sum(rowSums(normalized_counts))
+
+# Calculate relative abundance by dividing normalized counts by the total abundance
+relative_abundance <- normalized_counts / total_abundance
+
+# Replace NA with 0
+relative_abundance[is.na(relative_abundance)] <- 0
+
+# Calculate TPM (Transcripts Per Million)
+tpm <- relative_abundance * 1e6
+
+# Replace NA in TPM with 0
+tpm[is.na(tpm)] <- 0
+
+# Add gene_id back to the output data
+relative_abundance_df <- as.data.table(relative_abundance)
+relative_abundance_df[, gene_id := data$gene_id]
+setcolorder(relative_abundance_df, c("gene_id", colnames(relative_abundance_df)[-ncol(relative_abundance_df)]))
+
+tpm_df <- as.data.table(tpm)
+tpm_df[, gene_id := data$gene_id]
+setcolorder(tpm_df, c("gene_id", colnames(tpm_df)[-ncol(tpm_df)]))
+
+# Save results to files
+fwrite(relative_abundance_df, output_file_relative_abundance, sep = "\t")
+fwrite(tpm_df, output_file_tpm, sep = "\t")
+
+# Print confirmation
+cat("Relative abundance and TPM calculation completed. Results saved to:\n",
+    output_file_relative_abundance, "\n", output_file_tpm, "\n")
+
+```
+
+
+
+# New code to include the depth
+
+```{r}
+# Calculate sequencing depth per sample (column sums of raw counts)
+sequencing_depth <- colSums(count_data)
+
+# Normalize counts by gene length and sequencing depth
+normalized_counts <- sweep(count_data, 1, gene_lengths, `/`)  # Normalize by gene length
+normalized_counts <- sweep(normalized_counts, 2, sequencing_depth, `/`)  # Normalize by sequencing depth
+
+# Replace any resulting NA values with 0
+normalized_counts[is.na(normalized_counts)] <- 0
+
+# Calculate relative abundance by normalizing counts per sample
+relative_abundance <- sweep(normalized_counts, 2, colSums(normalized_counts), `/`)
+
+# Replace NA values with 0
+relative_abundance[is.na(relative_abundance)] <- 0
+
+```
+
+
+
+
+
+
+
+```{r}
+#Jan 13, start here:
+# sum all reads
+library(data.table)
+
+# Input and output file paths
+input_file <- "/Merged_AllGenes_Reads2.tsv"
+output_file_relative_abundance <- "/Relative_Abundance.tsv"
+output_file_tpm <- "TPM.tsv"
+
+# Read the input data
+data <- fread(input_file)
+
+# Replace NA in the dataset with 0
+data[is.na(data)] <- 0
+
+# Extract numeric columns (gene lengths and counts)
+gene_lengths <- as.numeric(data$length) # Ensure 'length' is numeric
+count_data <- data[, -c("gene_id", "length"), with = FALSE] # Exclude non-count columns
+
+# Convert count_data to a numeric matrix
+count_data <- as.matrix(sapply(count_data, as.numeric))
+
+# Validate gene lengths
+gene_lengths[is.na(gene_lengths) | gene_lengths == 0] <- 1 # Avoid division by zero
+
+# Normalize counts by gene length (per gene, per sample)
+normalized_counts <- sweep(count_data, 1, gene_lengths, `/`)
+
+# Replace any resulting NA in normalized_counts with 0
+normalized_counts[is.na(normalized_counts)] <- 0
+
+# Calculate total abundance (sum of all row sums across all genes and samples)
+total_abundance <- sum(rowSums(normalized_counts))
+
+# Calculate relative abundance by dividing normalized counts by the total abundance
+relative_abundance <- normalized_counts / total_abundance
+
+# Replace NA in relative_abundance with 0
+relative_abundance[is.na(relative_abundance)] <- 0
+
+# Calculate TPM (Transcripts Per Million)
+tpm <- relative_abundance * 1e6
+
+# Replace NA in TPM with 0
+tpm[is.na(tpm)] <- 0
+
+# Add gene_id back to the output data
+relative_abundance_df <- as.data.table(relative_abundance)
+relative_abundance_df[, gene_id := data$gene_id]
+setcolorder(relative_abundance_df, c("gene_id", colnames(relative_abundance_df)[-ncol(relative_abundance_df)]))
+
+tpm_df <- as.data.table(tpm)
+tpm_df[, gene_id := data$gene_id]
+setcolorder(tpm_df, c("gene_id", colnames(tpm_df)[-ncol(tpm_df)]))
+
+# Save results to files
+fwrite(relative_abundance_df, output_file_relative_abundance, sep = "\t")
+fwrite(tpm_df, output_file_tpm, sep = "\t")
+
+# Print confirmation
+cat("Relative abundance and TPM calculation completed. Results saved to:\n",
+    output_file_relative_abundance, "\n", output_file_tpm, "\n")
+
+```
+
+
+
+
+# Relative Abundance
+
+
+```{r}
+library(data.table)
+
+# Input and output file paths
+input_file <- "Merged_AllGenes_Reads2.tsv"
+output_file_relative_abundance <- "/Relative_Abundance.tsv"
+output_file_tpm <- "/TPM.tsv"
+
+# Read the input data
+data <- fread(input_file)
+
+# Replace NA in the dataset with 0
+data[is.na(data)] <- 0
+
+# Extract numeric columns (gene lengths and counts)
+gene_lengths <- as.numeric(data$length) # Ensure 'length' is numeric
+count_data <- data[, -c("gene_id", "length"), with = FALSE] # Exclude non-count columns
+
+# Convert count_data to a numeric matrix
+count_data <- as.matrix(sapply(count_data, as.numeric))
+
+# Validate gene lengths
+gene_lengths[is.na(gene_lengths) | gene_lengths == 0] <- 1 # Avoid division by zero
+
+# Normalize counts by gene length (per gene, per sample)
+normalized_counts <- sweep(count_data, 1, gene_lengths, `/`)
+
+# Replace any resulting NA in normalized_counts with 0
+normalized_counts[is.na(normalized_counts)] <- 0
+
+# Calculate total reads across all samples for the entire dataset (sum of all counts)
+total_reads_across_all_samples <- sum(rowSums(count_data, na.rm = TRUE))
+
+# Calculate relative abundance by dividing normalized counts by the total reads across all samples
+relative_abundance <- sweep(normalized_counts, 1, total_reads_across_all_samples, `/`)
+
+# Replace NA in relative_abundance with 0
+relative_abundance[is.na(relative_abundance)] <- 0
+
+# Calculate TPM (Transcripts Per Million)
+tpm <- relative_abundance * 1e6
+
+# Replace NA in TPM with 0
+tpm[is.na(tpm)] <- 0
+
+# Add gene_id back to the output data
+relative_abundance_df <- as.data.table(relative_abundance)
+relative_abundance_df[, gene_id := data$gene_id]
+setcolorder(relative_abundance_df, c("gene_id", colnames(relative_abundance_df)[-ncol(relative_abundance_df)]))
+
+tpm_df <- as.data.table(tpm)
+tpm_df[, gene_id := data$gene_id]
+setcolorder(tpm_df, c("gene_id", colnames(tpm_df)[-ncol(tpm_df)]))
+
+# Save results to files
+fwrite(relative_abundance_df, output_file_relative_abundance, sep = "\t")
+fwrite(tpm_df, output_file_tpm, sep = "\t")
+
+# Print confirmation
+cat("Relative abundance and TPM calculation completed. Results saved to:\n",
+    output_file_relative_abundance, "\n", output_file_tpm, "\n")
+
+```
+
+
+
+# Merge KO
+
+```{r}
+# Load required libraries
+library(dplyr)
+
+# Read your data
+abundance_data <- read.table("01_KEGG_Modules", header = TRUE, sep = "\t")
+module_data <- read.table("File_D.tsv", header = TRUE, sep = "\t")
+
+# Merge the data frames by rname
+merged_data <- merge(abundance_data, module_data, by = "rname")
+
+# Sum the relative abundances by KEGG Module (assuming columns for abundance are named V1, V2, etc.)
+# You will need to adjust this depending on the exact column names in your abundance data
+collapsed_abundance <- merged_data %>%
+  gather(key = "sample", value = "abundance", -c(rname, KEGG_Module)) %>%
+  group_by(KEGG_Module, sample) %>%
+  summarise(total_abundance = sum(abundance, na.rm = TRUE))
+
+# View the collapsed abundances by KEGG Module
+head(collapsed_abundance)
+
+
+```
+
+
+
+# Preparing the file to the next scrip
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(readr)
+
+# Input Files
+#01_Functions_AllGenes.tsv and 02_Counts_AllGenes_PerSample.tsv
+#/Users/jasge/Documents/01_Gene_Catalog/R_analysis/Share_Results_AllGenes/New/TESTE2
+
+
+# Step 1: Read the input file and select columns 1 and 4
+kegg_modules <- read_tsv(
+  "/01_Functions_AllGenes.tsv",
+  col_names = FALSE,
+  show_col_types = FALSE
+) %>%
+  select(X1, X4) %>%
+  filter(X4 != "-") %>%
+  separate_rows(X4, sep = ",")
+
+
+# Step 3: Read the counts file and filter rows based on the extracted IDs
+Total_Abundance <- read_tsv(
+  "02_Counts_AllGenes_PerSample.tsv",
+  col_names = FALSE,
+  show_col_types = FALSE
+) %>%
+  filter(X1 %in% kegg_modules$X1)
+
+
+# Step 3: Read the counts file and filter rows based on the extracted IDs
+Relative_Abundance <- read_tsv(
+  "03_RelativeAbundance_AllGenes_PerSample.tsv",
+  col_names = FALSE,
+  show_col_types = FALSE
+) %>%
+  filter(X1 %in% kegg_modules$X1)
+
+# Define the new column names
+new_colnames <- c("gene", paste0("M", sprintf("%02d", 1:30)))
+
+# Assign the new column names to Relative_Abundance
+colnames(Relative_Abundance) <- new_colnames
+
+# Rename the columns and remove the first row
+kegg_modules <- kegg_modules %>%
+  rename(gene = X1, KEGG_Module = X4) %>%
+  filter(gene != "rname")
+
+# Check the result
+head(kegg_modules)
+
+#merging
+```
+
+# Trying with temp files in variables
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(readr)
+
+# Read KEGG data
+kegg <- kegg_modules
+# Read Counts data
+counts <- Relative_Abundance
+
+# Reshape KEGG data to a long format (one module per row)
+kegg_long <- kegg %>%
+  pivot_longer(cols = starts_with("KEGG_Module"), names_to = "Module_Type", values_to = "KEGG_Module") %>%
+  filter(KEGG_Module != "")  # Remove empty rows
+
+# Reshape Counts data to a long format for M01 to M30
+counts_long <- counts %>%
+  pivot_longer(cols = starts_with("M"), names_to = "Sample", values_to = "Abundance")
+
+# Join the KEGG and Counts data
+merged_data <- kegg_long %>%
+  left_join(counts_long, by = "gene", relationship = "many-to-many")
+
+# Group by KEGG_Module and Sample, then sum the abundances
+result <- merged_data %>%
+  mutate(Abundance = as.numeric(Abundance)) %>%  # Convert Abundance to numeric
+  group_by(KEGG_Module, Sample) %>%
+  summarize(Count = sum(Abundance, na.rm = TRUE), .groups = "drop")
+
+
+# Pivot the result to wide format with KEGG_Module as rows and Samples as columns
+final_output <- result %>%
+  pivot_wider(names_from = Sample, values_from = Count, values_fill = list(Count = 0))
+
+# Print the final output
+print(final_output)
+
+# Optionally write to a file
+write.table(final_output, "/KEGG_Counts_Output.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+```
+
+# Whole file
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(readr)
+
+# Read KEGG data
+kegg <- read.delim("01_KEGG_Moduless", 
+                   sep = "\t", 
+                   row.names = NULL, 
+                   stringsAsFactors = FALSE)
+#colnames(kegg) <- c("gene", "KEGG_Module1", "KEGG_Module2")
+
+#,"KEGG_Module3","KEGG_Module4","KEGG_Module5","KEGG_Module6","KEGG_Module7","KEGG_Module8","KEGG_Module9","KEGG_Module10","KEGG_Module11","KEGG_Module12","KEGG_Module13","KEGG_Module14","KEGG_Module15","KEGG_Module16","KEGG_Module17")
+
+# Read Counts data
+counts <- read.delim("File_D.tsv", sep = "\t", stringsAsFactors = FALSE)
+colnames(counts)[1] <- "gene"  # Ensure the first column is named 'gene'
+
+# Reshape KEGG data to a long format (one module per row)
+kegg_long <- kegg %>%
+  pivot_longer(cols = starts_with("KEGG_Module"), names_to = "Module_Type", values_to = "KEGG_Module") %>%
+  filter(KEGG_Module != "")  # Remove empty rows
+
+# Reshape Counts data to a long format for M01 to M30
+counts_long <- counts %>%
+  pivot_longer(cols = starts_with("M"), names_to = "Sample", values_to = "Abundance")
+
+# Join the KEGG and Counts data
+merged_data <- kegg_long %>%
+  left_join(counts_long, by = "gene", relationship = "many-to-many")
+
+# Group by KEGG_Module and Sample, then sum the abundances
+result <- merged_data %>%
+  group_by(KEGG_Module, Sample) %>%
+  summarize(Count = sum(Abundance, na.rm = TRUE), .groups = "drop")
+
+# Pivot the result to wide format with KEGG_Module as rows and Samples as columns
+final_output <- result %>%
+  pivot_wider(names_from = Sample, values_from = Count, values_fill = list(Count = 0))
+
+# Print the final output
+print(final_output)
+
+# Optionally write to a file
+write.table(final_output, "/2KEGG_Counts_Output.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+```
+
+
+# KEGG pathway
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(readr)
+
+
+kegg <- read.delim("ko_output.txt", 
+                   sep = "\t", 
+                   row.names = NULL, 
+                   stringsAsFactors = FALSE)
+colnames(kegg) <- c("gene", "KEGG_Module1", "KEGG_Module2")
+
+# Read Counts data
+counts <- read.delim("ko_relativeAbundance.tsv", sep = "\t", stringsAsFactors = FALSE)
+colnames(counts)[1] <- "gene"  # Ensure the first column is named 'gene'
+
+
+# Reshape(one module per row)
+kegg_long <- kegg %>%
+  pivot_longer(cols = starts_with("KEGG_Module"), names_to = "Module_Type", values_to = "KEGG_Module") %>%
+  filter(KEGG_Module != "")  # Remove empty rows
+
+# Reshape M01-M30
+counts_long <- counts %>%
+  pivot_longer(cols = starts_with("M"), names_to = "Sample", values_to = "Abundance")
+
+# Join the KEGG and Counts data
+merged_data <- kegg_long %>%
+  left_join(counts_long, by = "gene")
+
+# Group by KEGG_Module and Sample, then sum the abundances
+result <- merged_data %>%
+  group_by(KEGG_Module, Sample) %>%
+  summarize(Count = sum(Abundance, na.rm = TRUE), .groups = "drop")
+
+# KEGG_Module as rows and Samples as columns
+final_output <- result %>%
+ pivot_wider(names_from = Sample, values_from = Count, values_fill = list(Count = 0))
+
+# Optionally write to a file
+write.table(final_output, "/KEGG_Counts_Output_pathway.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# plot
+
+```{r}
+# Exclude the "Total" row and map "Column" to "Sample"
+output <- output[output$Column != "Total", ]
+output$Sample <- output$Column  # Rename "Column" to "Sample" for clarity
+
+# Load ggplot2
+library(ggplot2)
+
+# Create the plot
+ggplot(output, aes(x = Sample)) +
+  geom_col(aes(y = TotalGenes), fill = "#69b3a2", alpha = 0.8) +
+  geom_line(aes(y = CoverageMean * 10000, group = 1), color = "#404080", linewidth = 1) + # Scale CoverageMean for better visibility
+  scale_y_continuous(
+    name = "Total Genes",
+    sec.axis = sec_axis(~ . / 10000, name = "CoverageMean")
+  ) +
+  labs(
+    title = "Total Genes and CoverageMean by Sample",
+    x = "Sample",
+    y = "Total Genes"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+
+
+```{r}
+# Exclude the "Total" row and map "Column" to "Sample"
+output <- output[output$Column != "Total", ]
+output$Sample <- output$Column  # Rename "Column" to "Sample" for clarity
+
+# Load ggplot2
+library(ggplot2)
+
+# Create the plot with text inside bars
+ggplot(output, aes(x = Sample)) +
+  geom_col(aes(y = TotalGenes, fill = Percentage.Genes.Mapped), alpha = 0.8) +  # Color bars by Percentage.Genes.Mapped
+  geom_line(aes(y = CoverageMean * 10000, group = 1), color = "#404080", linewidth = 1) + # Scale CoverageMean for better visibility
+  geom_text(aes(y = TotalGenes, label = round(Percentage.Genes.Mapped, 1)), vjust = -0.5, color = "black", size = 3) +  # Add percentage text inside the bars
+  scale_y_continuous(
+    name = "Total Genes",
+    sec.axis = sec_axis(~ . / 10000, name = "CoverageMean")
+  ) +
+  labs(
+    title = "Total Genes, CoverageMean, and Percentage Genes Mapped by Sample",
+    x = "Sample",
+    y = "Total Genes"
+  ) +
+  scale_fill_gradient(low = "#D46C4E", high = "#43978D") +  # Custom color gradient for the bars
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+```{r}
+# Exclude the "Total" row and map "Column" to "Sample"
+output <- output[output$Column != "Total", ]
+output$Sample <- output$Column  # Rename "Column" to "Sample" for clarity
+
+# Load ggplot2
+library(ggplot2)
+
+# Create the plot
+ggplot(output, aes(x = Sample)) +
+  geom_col(aes(y = TotalGenes), fill = "#69b3a2", alpha = 0.8) +
+  geom_line(aes(y = Average * 10000, group = 1), color = "#404080", linewidth = 1) + # Scale Average for better visibility
+  scale_y_continuous(
+    name = "Total Genes",
+    sec.axis = sec_axis(~ . / 10000, name = "Average")
+  ) +
+  labs(
+    title = "Total Genes and Average by Sample",
+    x = "Sample",
+    y = "Total Genes"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+
+# Mean
+
+```{r}
+data <- read.table("Merged_AllGenes_Reads2.tsv", header = TRUE, sep = "\t")
+
+# Initialize vectors to store sums, counts, and percentages
+sums <- numeric(ncol(data) - 2)
+counts <- numeric(ncol(data) - 2)
+percentages <- numeric(ncol(data) - 2)
+
+total_genes <- nrow(data) # Total number of gene_id
+
+# Calculate column-wise sums, counts, and percentages (excluding NA)
+for (i in 3:ncol(data)) {
+  valid_values <- !is.na(data[[i]])
+  sums[i - 2] <- sum(data[[i]][valid_values], na.rm = TRUE)
+  counts[i - 2] <- sum(valid_values)
+  percentages[i - 2] <- (counts[i - 2] / total_genes) * 100
+}
+
+# Calculate means by dividing sums by counts
+means <- sums / counts
+
+# Create a data frame for output
+output <- data.frame(
+  Column = names(data)[-c(1,2)],
+  TotalReads = sums,
+  TotalGenes = counts,
+  Mean = means,
+  'Percentage Genes Mapped' = percentages
+)
+
+# Calculate the total sum, count, mean, and percentage for all columns combined
+total_sum <- sum(sums)
+total_count <- sum(counts)
+total_mean <- total_sum / total_count
+total_percentage <- (total_count / (total_genes * (ncol(data) - 2))) * 100
+
+# Add a row for the total values
+output <- rbind(output, data.frame(Column = "Total", TotalReads = total_sum, TotalGenes = total_count, Mean = total_mean, 'Percentage Genes Mapped' = total_percentage))
+
+save <- output
+write.table(output, "coverage_stats_percentageMean.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+
+```
+
+
+## Plot
+
+```{r}
+# Exclude the "Total" row and map "Column" to "Sample"
+output <- output[output$Column != "Total", ]
+output$Sample <- output$Column  # Rename "Column" to "Sample" for clarity
+
+# Load ggplot2
+library(ggplot2)
+
+# Create the plot with text inside bars
+ggplot(output, aes(x = Sample)) +
+  geom_col(aes(y = TotalGenes, fill = Percentage.Genes.Mapped), alpha = 0.8) +  # Color bars by Percentage.Genes.Mapped
+  geom_line(aes(y = Mean * 10000, group = 1), color = "#404080", linewidth = 1) + # Scale Mean for better visibility
+  geom_text(aes(y = TotalGenes, label = round(Percentage.Genes.Mapped, 1)), vjust = -0.5, color = "black", size = 3) +  # Add percentage text inside the bars
+  scale_y_continuous(
+    name = "Total Genes",
+    sec.axis = sec_axis(~ . / 10000, name = "Mean")
+  ) +
+  labs(
+    title = "Total Genes, Mean, and Percentage Genes Mapped by Sample",
+    x = "Sample",
+    y = "Total Genes"
+  ) +
+  scale_fill_gradient(low = "#D46C4E", high = "#43978D") +  # Custom color gradient for the bars
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+
+# Plot different color
+
+```{r}
+# Exclude the "Total" row and map "Column" to "Sample"
+output <- output[output$Column != "Total", ]
+output$Sample <- output$Column  # Rename "Column" to "Sample" for clarity
+
+# Load ggplot2 and scales
+library(ggplot2)
+library(scales)
+
+# Create the plot with text inside bars
+ggplot(output, aes(x = Sample)) +
+  geom_col(aes(y = TotalGenes, fill = Percentage.Genes.Mapped), alpha = 0.8) +  # Color bars by Percentage.Genes.Mapped
+  geom_line(aes(y = Mean * 10000, group = 1), color = "black", linewidth = 1) + # Scale Mean for better visibility
+  geom_text(aes(y = TotalGenes, label = round(Percentage.Genes.Mapped, 1)), vjust = -0.5, color = "black", size = 3) +  # Add percentage text inside the bars
+  scale_y_continuous(
+    name = "Total Genes",
+    labels = comma,  # Use the comma format to avoid scientific notation
+    sec.axis = sec_axis(~ . / 10000, name = "Mean")
+  ) +
+  labs(
+    title = "Total Genes, Mean, and Percentage Genes Mapped by Sample",
+    x = "Sample",
+    y = "Total Genes"
+  ) +
+  scale_fill_gradient(low = "gray80", high = "gray20") +  # Grayscale color gradient for the bars
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)  # Rotate x-axis labels 90 degrees
+  )
+
+
+```
+
+
+# Integrating modules
+
+```{r}
+
+
+
+# Read the KEGG module file
+kegg_data <- read.table("kegg_module_percentages.txt", 
+                        header = TRUE, sep = "\t")
+
+# Summarize the KEGG data by Sample to get the total `Genes_Per_Module`
+kegg_summary <- kegg_data %>%
+  group_by(Sample) %>%
+  summarize(Genes_Per_Module = sum(Genes_Per_Module, na.rm = TRUE), .groups = "drop")
+
+# Merge the summarized KEGG data with output
+output <- output %>%
+  left_join(kegg_summary, by = "Sample")
+
+# Handle NA values for Samples without modules
+output$Genes_Per_Module[is.na(output$Genes_Per_Module)] <- 0
+
+# Calculate the remainder genes
+output$Remainder_Genes <- output$TotalGenes - output$Genes_Per_Module
+
+# Convert to long format for plotting
+output_long <- output %>%
+  select(Sample, Genes_Per_Module, Remainder_Genes) %>%
+  pivot_longer(cols = c(Genes_Per_Module, Remainder_Genes), 
+               names_to = "Gene_Type", 
+               values_to = "Gene_Count")
+
+# Create the updated plot
+ggplot(output_long, aes(x = Sample, y = Gene_Count, fill = Gene_Type)) +
+  geom_col(position = "stack", alpha = 0.8) +  # Stacked bar chart
+  geom_line(data = output, aes(x = Sample, y = Mean * 10000, group = 1), 
+            color = "black", linewidth = 1, inherit.aes = FALSE) +  # Add line for Mean
+  scale_y_continuous(
+    name = "Total Genes",
+    sec.axis = sec_axis(~ . / 10000, name = "Mean")
+  ) +
+  labs(
+    title = "Total Genes with Module Contribution by Sample",
+    x = "Sample",
+    y = "Total Genes"
+  ) +
+  scale_fill_manual(values = c("Genes_Per_Module" = "#43978D", "Remainder_Genes" = "gray80")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+  )
+
+```
+
+
+# Trying another line
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Read your output file
+
+# Read the KEGG module file
+kegg_data <- read.table("kegg_module_percentages.txt", 
+                        header = TRUE, sep = "\t")
+
+# Summarize the KEGG data by Sample to get the total Genes_Per_Module
+kegg_summary <- kegg_data %>%
+  group_by(Sample) %>%
+  summarize(Genes_Per_Module = sum(Genes_Per_Module, na.rm = TRUE), .groups = "drop")
+
+# Merge the summarized KEGG data with output
+output <- output %>%
+  left_join(kegg_summary, by = "Sample")
+
+# Handle NA values for Samples without modules
+output$Genes_Per_Module[is.na(output$Genes_Per_Module)] <- 0
+
+# Calculate the remainder genes
+output$Remainder_Genes <- output$TotalGenes - output$Genes_Per_Module
+
+# Calculate coverage for Genes_Per_Module
+output$Coverage_KEGG <- (output$Genes_Per_Module / output$TotalReads) * 1e6  # Scale for visualization
+
+# Convert to long format for stacked bar plotting
+output_long <- output %>%
+  select(Sample, Genes_Per_Module, Remainder_Genes) %>%
+  pivot_longer(cols = c(Genes_Per_Module, Remainder_Genes), 
+               names_to = "Gene_Type", 
+               values_to = "Gene_Count")
+
+# Create the updated plot
+ggplot(output_long, aes(x = Sample, y = Gene_Count, fill = Gene_Type)) +
+  geom_col(position = "stack", alpha = 0.8) +  # Stacked bar chart
+  geom_line(data = output, aes(x = Sample, y = Mean * 10000, group = 1), 
+            color = "black", linewidth = 1, inherit.aes = FALSE) +  # Line for Mean
+  geom_line(data = output, aes(x = Sample, y = Coverage_KEGG * 10000, group = 1), 
+            color = "#D46C4E", linewidth = 1, inherit.aes = FALSE, linetype = "dashed") +  # Line for KEGG Coverage
+  scale_y_continuous(
+    name = "Total Genes",
+    sec.axis = sec_axis(~ . / 10000, name = "Mean / KEGG Coverage")
+  ) +
+  labs(
+    title = "Total Genes, KEGG Module Contribution, and Coverage by Sample",
+    x = "Sample",
+    y = "Total Genes"
+  ) +
+  scale_fill_manual(values = c("Genes_Per_Module" = "#43978D", "Remainder_Genes" = "gray80")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+  )
+
+```
+
+
+# Two coverage information
+
+```{r}
+
+
+# Read the KEGG module file
+kegg_data <- read.table("kegg_module_percentages.txt", 
+                        header = TRUE, sep = "\t")
+
+# Summarize the KEGG data by Sample to get the total Genes_Per_Module
+kegg_summary <- kegg_data %>%
+  group_by(Sample) %>%
+  summarize(Genes_Per_Module = sum(Genes_Per_Module, na.rm = TRUE), .groups = "drop")
+
+# Merge the summarized KEGG data with output
+output <- output %>%
+  left_join(kegg_summary, by = "Sample")
+
+# Handle NA values for Samples without modules
+output$Genes_Per_Module[is.na(output$Genes_Per_Module)] <- 0
+
+# Calculate the remainder genes
+output$Remainder_Genes <- output$TotalGenes - output$Genes_Per_Module
+
+# Calculate coverage for Genes_Per_Module (KEGG)
+output$Coverage_KEGG <- (output$Genes_Per_Module / output$TotalReads) * 1e6  # Scale for visualization
+
+# Create a long format for stacking bars (Total Genes, Genes_Per_Module, Remainder_Genes)
+output_long <- output %>%
+  select(Sample, Genes_Per_Module, Remainder_Genes) %>%
+  pivot_longer(cols = c(Genes_Per_Module, Remainder_Genes), 
+               names_to = "Gene_Type", 
+               values_to = "Gene_Count")
+
+# Create the plot with everything included (stacked bars, line for Mean, and line for KEGG coverage)
+ggplot(output_long, aes(x = Sample, y = Gene_Count, fill = Gene_Type)) +
+  geom_col(position = "stack", alpha = 0.8) +  # Stacked bars for Genes_Per_Module and Remainder_Genes
+  geom_line(data = output, aes(x = Sample, y = Mean * 10000, group = 1), 
+            color = "black", linewidth = 1, inherit.aes = FALSE) +  # Line for Mean coverage
+  geom_line(data = output, aes(x = Sample, y = Coverage_KEGG * 10000, group = 1), 
+            color = "#D46C4E", linewidth = 1, inherit.aes = FALSE, linetype = "dashed") +  # Line for KEGG coverage
+  scale_y_continuous(
+    name = "Total Genes",
+    sec.axis = sec_axis(~ . / 10000, name = "Coverage (Mean / KEGG)")
+  ) +
+  labs(
+    title = "Total Genes, KEGG Module Contribution, and Coverage by Sample",
+    x = "Sample",
+    y = "Total Genes"
+  ) +
+  scale_fill_manual(values = c("Genes_Per_Module" = "#43978D", "Remainder_Genes" = "gray80")) +
+  geom_text(aes(x = Sample, y = Gene_Count, label = round(output$Percentage.Genes.Mapped, 1)), 
+            vjust = -0.5, color = "black", size = 3, inherit.aes = FALSE) +  # Percentage text inside bars
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+  )
+
+```
+
+
+
+
+#### Jan 17, calculate the total number of reads
+
+
+```{r}
+
+# Define file paths
+file_paths <- list.files(
+  path = "",
+  pattern = "^filtered_coverage_M\\d{2}_columns\\.txt$",
+  full.names = TRUE
+)
+
+# Initialize an empty list to store data
+results <- list()
+
+# Process files one by one
+for (i in seq_along(file_paths)) {
+  # Read the file using data.table
+  message("Processing file: ", file_paths[i])
+  dt <- fread(file_paths[i], select = c("rname", "length", "numreads"), sep = "\t")
+  
+  # Rename columns for consistency
+  setnames(dt, old = c("rname", "numreads"), new = c("gene_id", paste0("M", sprintf("%02d", i))))
+  
+  # Add to results list
+  results[[i]] <- dt
+}
+
+# Merge all files
+message("Merging all files...")
+merged_dt <- Reduce(function(x, y) {
+  merge(x, y, by = c("gene_id", "length"), all = TRUE)
+}, results)
+
+# Write the final merged data
+output_file <- "/Merged_AllGenes_ReadsTotal.tsv"
+fwrite(merged_dt, file = output_file, sep = "\t", quote = FALSE)
+
+# Confirmation message
+message("Merged data written to: ", output_file)
+```
+
+
+

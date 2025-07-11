@@ -1,0 +1,185 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+# Metadata From Albert
+
+```{r}
+library(readxl)
+meta_filename <- "Metadata.xlsx"
+#meta_full <- read_excel(path = meta_filename, col_names = T, n_max = 15)
+meta_full <- read_excel(path = meta_filename, col_names = T, n_max = 30)
+meta_full$`Group No` <- factor(meta_full$`Group No`, levels = c("1", "2", "3"),                                labels = c("Chow", "CDAA-HF", "CDAA-HF+Abx"))
+meta_full$Group <- paste(meta_full$`Group No`, "_",                          meta_full$`Week of euthanasia`, "w", sep = '')
+meta_full$Group <- factor(meta_full$Group, levels = c("Chow_6w", "Chow_12w",                                                       "CDAA-HF_6w", "CDAA-HF_12w", "CDAA-HF+Abx_12w"))
+meta_full$`Antibiotic treatment` <- factor(meta_full$`Antibiotic treatment`,                                            levels = c("No", "Yes"))
+meta_full$Week <- factor(meta_full$`Week of euthanasia`, levels = c("6", "12"),                          labels = c("6w", "12w"))
+meta_full$`Mouse ID` <- factor(meta_full$`Mouse ID`)
+#meta_full <- meta_full[-5,] # that was for M11
+meta_full$shotgun_file <- meta_full$`Sample Name`
+```
+
+## Testing
+
+```{r}
+library(tidyverse)
+
+# Set base directory
+base_dir <- "RA_Abundance/"
+
+# Read metadata
+
+# Read both files
+ec_data <- read_tsv(file.path(base_dir, "New_EGGNog_ECNumber_AB.txt"))
+ko_data <- read_tsv(file.path(base_dir, "New_EGGNog_KEGG_KO_AB.txt"))
+
+# Extract EC Numbers and KEGG IDs
+ec_data_long <- ec_data %>%
+  pivot_longer(-EC_Number, names_to = "Sample Name", values_to = "Abundance") %>%
+  filter(Abundance > 0) %>%
+  select(`Sample Name`, EC_Number) %>%
+  distinct()
+
+ko_data_long <- ko_data %>%
+  pivot_longer(-KEGG_ID, names_to = "Sample Name", values_to = "Abundance") %>%
+  filter(Abundance > 0) %>%
+  select(`Sample Name`, KEGG_ID) %>%
+  distinct()
+
+# Merge metadata to get groups
+ec_data_long <- ec_data_long %>%
+  left_join(meta_full, by = "Sample Name") %>%
+  select(`Sample Name`, EC_Number, Group) %>%
+  distinct()
+
+ko_data_long <- ko_data_long %>%
+  left_join(meta_full, by = "Sample Name") %>%
+  select(`Sample Name`, KEGG_ID, Group) %>%
+  distinct()
+
+# Count unique IDs per sample
+ec_summary_sample <- ec_data_long %>%
+  group_by(`Sample Name`, Group) %>%
+  summarize(Unique_EC_Count = n_distinct(EC_Number), .groups = "drop")
+
+ko_summary_sample <- ko_data_long %>%
+  group_by(`Sample Name`, Group) %>%
+  summarize(Unique_KEGG_Count = n_distinct(KEGG_ID), .groups = "drop")
+
+# Count unique IDs per group
+ec_summary_group <- ec_data_long %>%
+  group_by(Group) %>%
+  summarize(Unique_EC_Count = n_distinct(EC_Number), .groups = "drop")
+
+ko_summary_group <- ko_data_long %>%
+  group_by(Group) %>%
+  summarize(Unique_KEGG_Count = n_distinct(KEGG_ID), .groups = "drop")
+
+# Print summaries
+print(ec_summary_sample)
+print(ko_summary_sample)
+print(ec_summary_group)
+print(ko_summary_group)
+
+# Save results
+#write_tsv(ec_summary_sample, file.path(base_dir, "EC_Number_Summary_per_Sample.tsv"))
+#write_tsv(ko_summary_sample, file.path(base_dir, "KEGG_ID_Summary_per_Sample.tsv"))
+#write_tsv(ec_summary_group, file.path(base_dir, "EC_Number_Summary_per_Group.tsv"))
+#write_tsv(ko_summary_group, file.path(base_dir, "KEGG_ID_Summary_per_Group.tsv"))
+
+```
+
+## More
+
+```{r}
+library(tidyverse)
+
+# Set base directory
+base_dir <- "/Users/jasge/Documents/GitHub/mg_catalog_functions/RelativeAbundance_KEGG_Module/RA_Abundance/"
+
+# Read metadata
+
+# Read both files
+ec_data <- read_tsv(file.path(base_dir, "New_EGGNog_ECNumber_AB.txt"))
+ko_data <- read_tsv(file.path(base_dir, "New_EGGNog_KEGG_KO_AB.txt"))
+
+# Reshape EC and KEGG data
+ec_data_long <- ec_data %>%
+  pivot_longer(-EC_Number, names_to = "Sample Name", values_to = "Abundance") %>%
+  filter(Abundance > 0) %>%
+  select(`Sample Name`, EC_Number) %>%
+  distinct()
+
+ko_data_long <- ko_data %>%
+  pivot_longer(-KEGG_ID, names_to = "Sample Name", values_to = "Abundance") %>%
+  filter(Abundance > 0) %>%
+  select(`Sample Name`, KEGG_ID) %>%
+  distinct()
+
+# Merge metadata to get groups
+ec_data_long <- ec_data_long %>%
+  left_join(meta_full, by = "Sample Name") %>%
+  select(Group, EC_Number) %>%
+  distinct()
+
+ko_data_long <- ko_data_long %>%
+  left_join(meta_full, by = "Sample Name") %>%
+  select(Group, KEGG_ID) %>%
+  distinct()
+
+# Create lists of unique EC Numbers and KEGG IDs per group
+ec_summary_group <- ec_data_long %>%
+  group_by(Group) %>%
+  summarize(EC_Number_List = list(unique(EC_Number)), .groups = "drop")
+
+ko_summary_group <- ko_data_long %>%
+  group_by(Group) %>%
+  summarize(KEGG_ID_List = list(unique(KEGG_ID)), .groups = "drop")
+
+# Expand lists into long format for better readability
+ec_summary_long <- ec_summary_group %>%
+  unnest(cols = EC_Number_List) %>%
+  rename(EC_Number = EC_Number_List)
+
+ko_summary_long <- ko_summary_group %>%
+  unnest(cols = KEGG_ID_List) %>%
+  rename(KEGG_ID = KEGG_ID_List)
+
+# Print results
+print(ec_summary_long)
+print(ko_summary_long)
+
+# Save results
+#write_tsv(ec_summary_long, file.path(base_dir, "EC_Number_per_Group.tsv"))
+#write_tsv(ko_summary_long, file.path(base_dir, "KEGG_ID_per_Group.tsv"))
+
+```
+
+# More
+
+```{r}
+library(ComplexUpset)
+
+# Convert EC Numbers to a presence/absence matrix
+ec_wide <- ec_summary_long %>%
+  mutate(Present = 1) %>%
+  pivot_wider(names_from = Group, values_from = Present, values_fill = 0)
+
+ko_wide <- ko_summary_long %>%
+  mutate(Present = 1) %>%
+  pivot_wider(names_from = Group, values_from = Present, values_fill = 0)
+
+# UpSet plot for EC Numbers
+upset(ec_wide, colnames(ec_wide)[-1], name = "EC Numbers") +
+  theme_minimal()
+
+# UpSet plot for KEGG IDs
+upset(ko_wide, colnames(ko_wide)[-1], name = "KEGG IDs") +
+  theme_minimal()
+
+```
+
+
+

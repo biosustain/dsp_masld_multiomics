@@ -1,0 +1,84 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# Load required libraries
+library(data.table)
+library(tidyverse)
+library(ggpubr)
+
+# Define directories
+base_dir <- "02_Data_Normalization/"
+input_dir <- file.path(base_dir, "Files")
+output_dir <- file.path(base_dir, "Results")
+
+# Helper function: Read and clean KEGG annotations
+read_kegg <- function(file_path, col_select, sep_col = NULL) {
+  read_tsv(file_path, col_names = FALSE, show_col_types = FALSE) %>%
+    select(all_of(col_select)) %>%
+    filter_at(vars(ends_with(col_select[length(col_select)])), all_vars(. != "-")) %>%
+    {if (!is.null(sep_col)) separate_rows(., all_of(sep_col), sep = ",") else .}
+}
+
+# Helper function: Read and clean relative abundance data
+read_relative_abundance <- function(file_path, num_samples) {
+  data <- read_csv(file_path, show_col_types = FALSE)
+  colnames(data) <- c("gene", paste0("M", sprintf("%02d", 1:num_samples)))
+  return(data)
+}
+
+# Helper function: Calculate relative abundances
+calculate_relative_abundance <- function(data, key_col, value_col) {
+  data %>%
+    group_by_at(vars(all_of(key_col), "Sample")) %>%
+    summarize(Sum_Abundance = sum(get(value_col), na.rm = TRUE), .groups = "drop") %>%
+    group_by(Sample) %>%
+    mutate(Relative_Abundance = Sum_Abundance / sum(Sum_Abundance, na.rm = TRUE)) %>%
+    pivot_wider(names_from = Sample, values_from = Relative_Abundance, values_fill = 0) %>%
+    replace_na(list(Relative_Abundance = 0))
+}
+
+# Function: Process KEGG data
+process_kegg_data <- function(kegg_file, abundance_file, key_col, output_file, num_samples = 30) {
+  kegg_data <- read_kegg(kegg_file, col_select = c("X1", key_col), sep_col = key_col)
+  kegg_data <- rename(kegg_data, gene = X1, Key = !!key_col)
+  rel_abundance <- read_relative_abundance(abundance_file, num_samples)
+  counts_long <- rel_abundance %>%
+    pivot_longer(cols = starts_with("M"), names_to = "Sample", values_to = "Abundance")
+  merged_data <- kegg_data %>%
+    left_join(counts_long, by = "gene", relationship = "many-to-many")
+  final_output <- calculate_relative_abundance(merged_data, "Key", "Abundance")
+  write.table(final_output, file.path(output_dir, output_file), sep = "\t", row.names = FALSE, quote = FALSE)
+  return(final_output)
+}
+
+# Define file paths
+kegg_modules_file <- file.path(input_dir, "01_Functions_AllGenes.tsv")
+relative_abundance_file <- file.path(input_dir, "normalized_counts_adjusted.csv")
+
+# Process KEGG Modules
+kegg_modules_result <- process_kegg_data(
+  kegg_file = kegg_modules_file,
+  abundance_file = relative_abundance_file,
+  key_col = "X4",
+  output_file = "KEGG_Module_Relative_Abundance.txt"
+)
+
+# Process KEGG Pathways
+kegg_pathways_result <- process_kegg_data(
+  kegg_file = kegg_modules_file,
+  abundance_file = relative_abundance_file,
+  key_col = "X3",
+  output_file = "KEGG_Pathway_Relative_Abundance.txt"
+)
+
+# Preview Results
+print(head(kegg_modules_result))
+print(head(kegg_pathways_result))
+
+
+```
+
+
